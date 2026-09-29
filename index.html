@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Расчёт A, B, C, N — перевод с BASIC</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #f4f6f8; color: #1a1d21;
+         font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 20px; color: #667085; font-size: .9rem; }
+  form { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: #344054; }
+  input[type=text] { padding: 8px 10px; font: inherit; font-size: 1rem;
+                     border: 1px solid #cbd2d9; border-radius: 8px; background: #fff; }
+  input[type=text]:focus { outline: 2px solid #2f6fed; outline-offset: 1px; }
+  .actions { grid-column: 1 / -1; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+  button { padding: 9px 18px; font: inherit; border: 0; border-radius: 8px;
+           background: #2f6fed; color: #fff; cursor: pointer; }
+  button:hover { background: #255fd6; }
+  .check { flex-direction: row; align-items: center; gap: 6px; font-size: .85rem; color: #475467; }
+  #out { margin-top: 18px; padding: 14px 16px; border: 1px solid #e0e4e9; border-radius: 10px;
+         background: #fff; font-family: ui-monospace, Consolas, "Courier New", monospace;
+         font-size: .95rem; white-space: pre-wrap; min-height: 24px; }
+  #out .err { color: #b42318; }
+  #out .note { color: #667085; }
+  table { border-collapse: collapse; margin-top: 12px; font-size: .85rem; }
+  th, td { border: 1px solid #d8dde4; padding: 3px 9px; text-align: right; }
+  th { background: #eef1f5; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Расчёт A, B, C, N</h1>
+  <p class="sub">Построчный перевод программы с BASIC (строки 1–31).</p>
+
+  <form id="f" autocomplete="off">
+    <label>S0 <input type="text" id="S0" inputmode="decimal" placeholder="например 1000"></label>
+    <label>S1 <input type="text" id="S1" inputmode="decimal" placeholder="например 500"></label>
+    <label>S2 <input type="text" id="S2" inputmode="decimal" placeholder="например 250"></label>
+    <label>S3 <input type="text" id="S3" inputmode="decimal" placeholder="например 800"></label>
+    <label>E1 <input type="text" id="E1" inputmode="decimal" placeholder="например 0.6931"></label>
+    <label>E2 <input type="text" id="E2" inputmode="decimal" placeholder="например 0.1393"></label>
+    <label>E3 <input type="text" id="E3" inputmode="decimal" placeholder="например 0.05"></label>
+    <div class="actions">
+      <button type="submit">Рассчитать</button>
+      <label class="check"><input type="checkbox" id="trace"> показать таблицу итераций</label>
+    </div>
+  </form>
+
+  <div id="out">Введите значения и нажмите «Рассчитать».</div>
+</main>
+
+<script>
+/* === CORE START ===
+   Построчный перевод BASIC → JavaScript.
+   Массивы индексируются 1..40, как в оригинале; неинициализированные
+   элементы равны 0 (в BASIC числовой массив тоже заполнен нулями).
+*/
+function computeABC(p, trace) {
+  const NMAX = 40;
+  const A = new Array(NMAX + 1).fill(0);
+  const B = new Array(NMAX + 1).fill(0);
+  const C = new Array(NMAX + 1).fill(0);
+  const S = new Array(NMAX + 1).fill(0);
+  const D = new Array(NMAX + 1).fill(0);   // D(40) в BASIC не вычисляется → остаётся 0
+
+  // строки 10–19 (часть, не зависящая от N)
+  const X1 = Math.exp(-p.E1);
+  const X2 = Math.exp(-p.E2);
+  const X5 = 1 - X1;
+  const X6 = 1 - X2;
+  const S4 = p.S1 - p.S0;
+
+  if (X5 === 0) {
+    return { ok: false, error: 'E1 = 0: деление на X5 = 1 − exp(−E1) невозможно.' };
+  }
+
+  let N = NMAX;
+  let reason = '';
+
+  for (N = 2; N <= NMAX; N++) {                 // строка 9: FOR N=2 TO 40
+    const X3 = Math.exp(-N * p.E1);             // строка 12
+    const X4 = Math.exp(-N * p.E2);             // строка 13
+    const X7 = 1 - X3;                          // строка 16
+
+    const den = X5 * X4 - X7 * X2 + X1 - X3;    // знаменатель из строки 18
+    if (den === 0) {
+      return { ok: false, error: 'Деление на ноль: знаменатель выражения для C(N) равен нулю (проверьте E1 и E2).' };
+    }
+
+    C[N] = (S4 * X6 - (p.S2 - p.S0) * X5) / den;   // строка 18
+    B[N] = (S4 - C[N] * X7) / X5;                  // строка 19
+    A[N] = p.S0 + B[N] + C[N];                     // строка 20
+
+    if (!Number.isFinite(A[N]) || !Number.isFinite(B[N]) || !Number.isFinite(C[N])) {
+      return { ok: false, error: 'В расчёте получились не числа — проверьте введённые значения.' };
+    }
+
+    if (N === NMAX) {                              // строка 21: IF N=40 THEN 26
+      reason = 'limit';
+      break;
+    }
+
+    S[N] = A[N] - B[N] * Math.exp(-p.E3) - C[N] * Math.exp(-N * p.E3);  // строка 22
+    D[N] = S[N] - p.S3;                                                // строка 23
+    if (trace) trace.push({ N: N, S: S[N], D: D[N] });
+
+    if (D[N] >= 0) {                               // строка 24: IF D(N)>=0 THEN 26
+      reason = 'cross';
+      break;
+    }
+  }
+
+  // строка 26: IF ABS(D(N))>ABS(D(N-1)) THEN N=N-1
+  const backtrack = Math.abs(D[N]) > Math.abs(D[N - 1]);
+  if (backtrack) N = N - 1;
+
+  // строка 27: IF N=1 THEN N=2
+  if (N === 1) N = 2;
+
+  return {
+    ok: true, N: N, A: A[N], B: B[N], C: C[N],
+    reason: reason, backtrack: backtrack,
+    dN: D[N], dPrev: D[N - 1], sN: S[N]
+  };
+}
+/* === CORE END === */
+
+/* Формат PRINT USING "#####": 5 знаков, округление до целого,
+   переполнение помечается знаком «%» (как в MS BASIC). */
+function using5(v) {
+  const s = String(Math.round(v));
+  return s.length > 5 ? '%' + s : s.padStart(5, ' ');
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function fmt(v, digits) {
+  if (!Number.isFinite(v)) return String(v);
+  return Math.abs(v) >= 1e6 || (v !== 0 && Math.abs(v) < 1e-4)
+    ? v.toExponential(6)
+    : v.toFixed(digits);
+}
+
+document.getElementById('f').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const out = document.getElementById('out');
+  const ids = ['S0', 'S1', 'S2', 'S3', 'E1', 'E2', 'E3'];
+  const p = {};
+  for (const id of ids) {
+    const raw = document.getElementById(id).value.trim().replace(',', '.');
+    const num = raw === '' ? NaN : Number(raw);
+    if (!Number.isFinite(num)) {
+      out.innerHTML = '<span class="err">Поле ' + id + ': нужно число (пустые поля недопустимы).</span>';
+      return;
+    }
+    p[id] = num;
+  }
+
+  const trace = [];
+  const r = computeABC(p, trace);
+
+  if (!r.ok) {
+    out.innerHTML = '<span class="err">Ошибка: ' + esc(r.error) + '</span>';
+    return;
+  }
+
+  // строки 28–31 — как в BASIC
+  let html = '';
+  html += 'A=' + esc(using5(r.A)) + '\n';
+  html += 'B=' + esc(using5(r.B)) + '\n';
+  html += 'C=' + esc(using5(r.C)) + '\n';
+  html += 'N=' + esc(using5(r.N)) + '\n';
+
+  // без округления до целого — так видна реальная точность
+  html += '\n<span class="note">точные значения:\n' +
+          'A = ' + esc(fmt(r.A, 6)) + '\n' +
+          'B = ' + esc(fmt(r.B, 6)) + '\n' +
+          'C = ' + esc(fmt(r.C, 6)) + '\n' +
+          'N = ' + r.N + '</span>\n';
+
+  let note;
+  if (r.reason === 'cross') {
+    note = 'Найдено первое N (2…' + 39 + '), при котором D(N) = S(N) − S3 ≥ 0';
+    if (r.backtrack) note += '; затем по строке 26 взято N−1 (|D(N−1)| оказалось меньше)';
+    note += '.';
+  } else {
+    note = 'D(N) не стало ≥ 0 в диапазоне N = 2…39, поэтому сработала строка 21 ' +
+           '(N = 40), где S(40) и D(40) не вычисляются и равны 0 — выведены A(40), B(40), C(40).';
+  }
+  if (r.N === 2 && r.dPrev === 0 && r.backtrack) {
+    note += ' Откат с N = 1 на N = 2 сделан строкой 27.';
+  }
+  html += '\n<span class="note">' + note + '</span>';
+
+  if (document.getElementById('trace').checked && trace.length) {
+    html += '<table><tr><th>N</th><th>S(N)</th><th>D(N) = S(N) − S3</th></tr>';
+    for (const row of trace) {
+      html += '<tr><td>' + row.N + '</td><td>' + esc(fmt(row.S, 6)) +
+              '</td><td>' + esc(fmt(row.D, 6)) + '</td></tr>';
+    }
+    html += '</table>';
+  }
+
+  out.innerHTML = html;
+});
+</script>
+</body>
+</html>
